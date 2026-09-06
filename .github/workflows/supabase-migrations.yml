@@ -1,0 +1,105 @@
+# ============================================================
+# 本番 Supabase へのマイグレーション自動適用
+#
+# main ブランチの supabase/ 配下が変わったときに、
+# supabase/migrations/ の未適用マイグレーションを本番へ流します。
+# 手動実行(Run workflow)もできます。
+#
+# 必要なシークレット(GitHub の Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  … https://supabase.com/dashboard/account/tokens で発行
+#   SUPABASE_DB_PASSWORD   … Supabase の Settings → Database のパスワード
+#   SUPABASE_PROJECT_REF   … 本番プロジェクトの ref(ダッシュボードの URL に含まれる 20 文字)
+# 詳しい手順は README.md の「DB マイグレーションの運用」を参照してください。
+#
+# ※ このワークフローは Vercel のデプロイとは独立しています。
+#    ここが失敗しても Vercel のデプロイは止まりません(逆も同じ)。
+#
+# ※ このリポジトリのマイグレーションはすべて冪等(何度流しても同じ結果)に
+#    書いてあるので、gym-buddy にあるような「手作業で適用済みの分を
+#    適用済みとして登録する(baseline)」処理は要りません。
+# ============================================================
+name: Supabase migrations
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "supabase/**"
+      - ".github/workflows/supabase-migrations.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-migrations
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  push-migrations:
+    name: supabase db push
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || vars.SUPABASE_PROJECT_REF }}
+
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: 必要なシークレットが設定されているか確認
+        run: |
+          missing=""
+          [ -n "${SUPABASE_ACCESS_TOKEN}" ] || missing="${missing} SUPABASE_ACCESS_TOKEN"
+          [ -n "${SUPABASE_DB_PASSWORD}" ]  || missing="${missing} SUPABASE_DB_PASSWORD"
+          [ -n "${SUPABASE_PROJECT_REF}" ]  || missing="${missing} SUPABASE_PROJECT_REF"
+
+          if [ -n "${missing}" ]; then
+            {
+              echo "## ⚠️ マイグレーションを適用できませんでした"
+              echo
+              echo "必要なシークレットが設定されていません:"
+              for name in ${missing}; do echo "- \`${name}\`"; done
+              echo
+              echo "GitHub リポジトリの **Settings → Secrets and variables → Actions → New repository secret** から登録してください。"
+              echo
+              echo "| シークレット | 取得場所 |"
+              echo "| --- | --- |"
+              echo "| \`SUPABASE_ACCESS_TOKEN\` | https://supabase.com/dashboard/account/tokens |"
+              echo "| \`SUPABASE_DB_PASSWORD\` | Supabase ダッシュボード → Settings → Database |"
+              echo "| \`SUPABASE_PROJECT_REF\` | Supabase ダッシュボードの URL に含まれる 20 文字の ref |"
+              echo
+              echo "手順の詳細は README.md の「DB マイグレーションの運用」を参照してください。"
+              echo "登録後、この Actions タブから **Run workflow** で手動実行すれば適用されます。"
+            } >> "${GITHUB_STEP_SUMMARY}"
+
+            echo "::error title=必要なシークレットが設定されていません::${missing# } が未設定です。README の「DB マイグレーションの運用」に従って Settings → Secrets and variables → Actions で登録してください。"
+            exit 1
+          fi
+
+          echo "必要なシークレットはすべて設定されています。"
+
+      - name: Supabase CLI をセットアップ
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: 本番プロジェクトに link
+        run: supabase link --project-ref "${SUPABASE_PROJECT_REF}"
+
+      - name: 未適用のマイグレーションを本番に適用
+        run: supabase db push --linked --yes
+
+      - name: 適用結果をサマリーに出力
+        if: ${{ always() && env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' }}
+        run: |
+          {
+            echo "## Supabase マイグレーション"
+            echo
+            echo "プロジェクト ref: \`${SUPABASE_PROJECT_REF}\`"
+            echo
+            supabase migration list --linked --output-format text 2>/dev/null \
+              || echo "(マイグレーション履歴を取得できませんでした)"
+          } >> "${GITHUB_STEP_SUMMARY}"

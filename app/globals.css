@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f5f7;
+  --foreground: #1a1d21;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* iOS で入力時に画面がズームされるのを防ぐ */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+/* ---- ホーム画面に追加したとき(PWA)の表示調整 ---- */
+
+html {
+  /* 横向きにしたときに iOS が勝手に文字を大きくするのを防ぐ */
+  -webkit-text-size-adjust: 100%;
+  /* ページ全体の引っ張り(バウンス)と、その先の更新動作を止める */
+  overscroll-behavior-y: none;
+}
+
+body {
+  overscroll-behavior-y: none;
+  /* タップしたときの灰色のハイライトを消してネイティブアプリらしくする */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 操作用の要素は長押しで文字が選択されないようにする(本文の選択は妨げない) */
+button,
+a,
+label,
+nav,
+summary {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* ---- 入力欄がカードからはみ出さないようにする ---- */
+
+/*
+ * iOS Safari の日付入力対策。
+ *
+ * iOS の input[type="date"] は「中身の幅」で広がろうとするため、
+ * width:100%(w-full)を指定していても親のカードより横に大きくなり、
+ * グレーの枠線がカードの右端からはみ出して見えてしまう。
+ * 見た目のリセット(appearance:none)と min-width:0 で親の幅に収める。
+ */
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* iOS は日付の値を中央寄せ・余白付きで描くので、左寄せにして高さを担保する */
+input[type="date"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value,
+input[type="month"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: left;
+  min-height: 1.5em;
+  margin: 0;
+}
+
+/* 入力欄全般の保険(狭い画面で親の幅を超えさせない) */
+input,
+select,
+textarea {
+  max-width: 100%;
+}
