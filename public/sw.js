@@ -1,5 +1,5 @@
 /**
- * ricebread の Service Worker(自前実装)。
+ * market-price の Service Worker(自前実装)。
  *
  * ■ 方針
  *   - キャッシュするのは「誰が見ても同じ静的アセット」だけ。
@@ -19,7 +19,7 @@
  */
 
 const CACHE_VERSION = "v1";
-const STATIC_CACHE = `ricebread-static-${CACHE_VERSION}`;
+const STATIC_CACHE = `market-price-static-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
 
 /** インストール時に必ず持っておくもの(オフライン画面とアイコン) */
@@ -59,7 +59,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key.startsWith("ricebread-") && key !== STATIC_CACHE)
+            .filter((key) => key.startsWith("market-price-") && key !== STATIC_CACHE)
             .map((key) => caches.delete(key))
         )
       )

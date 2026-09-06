@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 /** 「今後表示しない」を押したかどうかを覚えておくキー */
-const DISMISS_KEY = "ricebread:install-prompt-dismissed";
+const DISMISS_KEY = "market-price:install-prompt-dismissed";
 /** 案内を出すまでの待ち時間(開いてすぐ被せると邪魔なので少し待つ) */
 const SHOW_DELAY_MS = 2500;
 

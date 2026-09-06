@@ -5,14 +5,14 @@ import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import { appleStartupImages } from "@/lib/appleSplash";
 
 export const metadata: Metadata = {
-  title: "ricebread | スーパーの値段メモ",
+  title: "market-price | スーパーの値段メモ",
   description:
     "いつも行くスーパーの値段を覚えておいて、よその店やいつもの日と比べて高いか安いかを判断する個人向けアプリ",
-  applicationName: "ricebread",
+  applicationName: "market-price",
   // ホーム画面に追加したときの見た目(iOS Safari 向け)
   appleWebApp: {
     capable: true,
-    title: "ricebread",
+    title: "market-price",
     // 背景が明るいので、文字が黒くなる default を使う
     statusBarStyle: "default",
     startupImage: appleStartupImages,

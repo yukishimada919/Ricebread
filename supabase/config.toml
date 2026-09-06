@@ -3,4 +3,4 @@
 # 記載のない項目は CLI の既定値が使われます。
 # 参考: https://supabase.com/docs/guides/local-development/cli/config
 
-project_id = "ricebread"
+project_id = "market-price"

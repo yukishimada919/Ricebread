@@ -57,7 +57,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (!isSupabaseConfigured) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-6">
-        <h1 className="text-xl font-bold">ricebread のセットアップ</h1>
+        <h1 className="text-xl font-bold">market-price のセットアップ</h1>
         <p className="text-sm leading-relaxed">
           Supabase の環境変数が設定されていません。
           <code className="mx-1 rounded bg-gray-200 px-1">.env.local</code>

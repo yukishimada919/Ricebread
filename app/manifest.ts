@@ -7,8 +7,8 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "ricebread",
-    short_name: "ricebread",
+    name: "market-price",
+    short_name: "market-price",
     description:
       "スーパーの値段を覚えておいて、よその店やいつもの日と比べて高いか安いかを判断する買い物アプリ",
     lang: "ja",

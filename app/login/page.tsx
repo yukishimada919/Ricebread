@@ -53,7 +53,7 @@ export default function LoginPage() {
         <p className="flex justify-center text-emerald-600">
           <Tag aria-hidden size={48} strokeWidth={1.75} />
         </p>
-        <h1 className="mt-3 text-3xl font-bold">ricebread</h1>
+        <h1 className="mt-3 text-3xl font-bold">market-price</h1>
         <p className="mt-2 text-sm text-gray-500">
           スーパーの値段をおぼえて、高い/安いを判断
         </p>
