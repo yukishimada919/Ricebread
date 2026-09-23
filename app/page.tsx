@@ -77,7 +77,7 @@ export default function RecordPage() {
     } else {
       setStores(storeResult.data ?? []);
       setProducts(productResult.data ?? []);
-      // よく行く店が 1 つだけなら選んでおく(毎回選ぶ手間を省く)
+      // 「いつもの店」が 1 つだけなら選んでおく(毎回選ぶ手間を省く)
       const regulars = (storeResult.data ?? []).filter((s) => s.is_regular);
       if (regulars.length === 1) setStoreId(regulars[0].id);
     }
@@ -206,7 +206,11 @@ export default function RecordPage() {
 
   const verdicts = useMemo(() => {
     if (comparedValue === null || !storeId) return null;
-    const options = { useUnitPrice: compareByUnit };
+    const options = {
+      useUnitPrice: compareByUnit,
+      // 判定できなかったときに理由を言い分けるために使う
+      regularStoreCount: regularIds.size,
+    };
     return {
       vsOtherStores: judgeAgainstRegularStores(
         comparedValue,
@@ -223,7 +227,7 @@ export default function RecordPage() {
         options
       ),
     };
-  }, [comparedValue, points, storeId, date, compareByUnit]);
+  }, [comparedValue, points, storeId, date, compareByUnit, regularIds]);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -303,7 +307,7 @@ export default function RecordPage() {
           <h2 className="text-sm font-semibold">はじめの準備</h2>
           <p className="mt-2 text-sm leading-relaxed text-gray-600">
             値段を記録するには、先に「店」と「商品」を登録してください。
-            いつも行く店を登録しておくと、よその店の値段が高いか安いかを
+            「いつもの店」を登録しておくと、よその店の値段が高いか安いかを
             比べられるようになります。
           </p>
           <div className="mt-3 flex flex-col gap-2">
@@ -505,7 +509,7 @@ export default function RecordPage() {
             この値段は高い?安い?
           </h2>
           <VerdictBadge
-            title="いつも行く店の相場と比べて"
+            title="いつもの店の相場と比べて"
             judgement={verdicts.vsOtherStores}
           />
           <VerdictBadge

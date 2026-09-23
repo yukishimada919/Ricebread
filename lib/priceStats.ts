@@ -288,6 +288,16 @@ export function judge(price: number, baseline: Baseline | null): Judgement {
 export type JudgeOptions = {
   /** 内容量の違う商品と比べたいときは true(単価で判定する) */
   useUnitPrice?: boolean;
+  /**
+   * 「いつもの店」の印が付いている店の数。
+   *
+   * 判定できなかった理由を言い分けるためだけに使う。
+   * points にはその商品の記録しか入っていないので、
+   * 「そもそも印を付けていない」のか「印は付けたがこの商品をまだ
+   * 記録していない」のかが points だけでは区別できないため、
+   * 呼び出し側から渡してもらう。
+   */
+  regularStoreCount?: number;
 };
 
 /**
@@ -314,10 +324,44 @@ export function judgeAgainstRegularStores(
 
   if (reference.length === 0) {
     return unknown(
-      "いつも行く店の記録がまだありません。店の設定で「よく行く店」に印を付けてください"
+      reasonForNoReference(points, excludeStoreId, options.regularStoreCount)
     );
   }
   return judge(price, baselineOf(reference, useUnitPrice));
+}
+
+/**
+ * 比べられる「いつもの店」の記録が無いとき、その理由を言い分ける。
+ *
+ * 同じ「記録がありません」でも、使う人がやるべきことは 3 通りで違う。
+ * ひとまとめに「印を付けてください」と言ってしまうと、
+ * すでに印を付けている人には「付いているのに言われる」ことになり、
+ * 言われたとおりにしても何も変わらない。
+ * ここが使いはじめに必ず通る場所なので、理由ごとに案内を分ける。
+ */
+function reasonForNoReference(
+  points: PricePoint[],
+  excludeStoreId: string | undefined,
+  regularStoreCount: number | undefined
+): string {
+  // ① いまの店にはこの商品の記録があるが、ほかのいつもの店には無い。
+  //    自分自身とは比べられないので、比較対象が空になっている。
+  //    印は付いているので、印の話をしてはいけない。
+  const recordedAtCurrentRegularStore = points.some(
+    (p) => p.isRegularStore && p.storeId === excludeStoreId
+  );
+  if (recordedAtCurrentRegularStore) {
+    return "この商品を記録した「いつもの店」が、いまの店のほかにありません。別の店でも同じ商品を記録すると比べられます";
+  }
+
+  // ② そもそも「いつもの店」の印を付けた店が 1 つも無い。
+  //    件数が渡されていないときは断定できないので ③ の言い方にする。
+  if (regularStoreCount === 0) {
+    return "「いつもの店」の印が付いた店がありません。店の画面で、近所のスーパーに「いつもの店」の印を付けてください";
+  }
+
+  // ③ 印は付いているが、その店でこの商品をまだ記録していない。
+  return "「いつもの店」でこの商品を記録したことがまだありません。いつもの店でも同じ商品を記録すると比べられます";
 }
 
 /**

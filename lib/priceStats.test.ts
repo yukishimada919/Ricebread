@@ -228,12 +228,67 @@ describe("判定その1: よその店といつもの店を比べる", () => {
     expect(result.baseline?.sampleCount).toBe(1);
   });
 
-  it("よく行く店の記録がまだ無ければ判定しない", () => {
+  it("いつもの店の記録がまだ無ければ判定しない", () => {
     const result = judgeAgainstRegularStores(280, [
       point({ storeId: "far", isRegularStore: false, price: 320 }),
     ]);
     expect(result.verdict).toBe("unknown");
-    expect(result.reason).toContain("よく行く店");
+    expect(result.reason).toContain("いつもの店");
+  });
+
+  /**
+   * 判定できないときの案内文。
+   *
+   * 同じ「比べられません」でも、使う人がやるべきことは 3 通りで違う。
+   * ここを間違えると、すでに印を付けている人に「印を付けてください」と
+   * 言ってしまい、言われたとおりにしても何も変わらない状態になる。
+   * 使いはじめに必ず通る場所なので、理由ごとに案内を分けている。
+   */
+  describe("判定できない理由の言い分け", () => {
+    it("記録があるのが今いる店だけなら、印ではなく別の店での記録をすすめる", () => {
+      // 「いつもの店」に印は付いていて、そこで 1 件だけ記録した直後の状態。
+      // 自分自身とは比べられないので比較対象は空になるが、
+      // 印は付いているので印の話をしてはいけない。
+      const result = judgeAgainstRegularStores(
+        200,
+        [point({ storeId: "near", isRegularStore: true, price: 198 })],
+        "near",
+        { regularStoreCount: 1 }
+      );
+      expect(result.verdict).toBe("unknown");
+      expect(result.reason).toContain("別の店");
+      // 印を付けろとは言わない(もう付いているため)
+      expect(result.reason).not.toContain("印を付けて");
+    });
+
+    it("印を付けた店が 1 つも無ければ、印を付けるよう案内する", () => {
+      const result = judgeAgainstRegularStores(
+        200,
+        [point({ storeId: "far", isRegularStore: false, price: 320 })],
+        "far",
+        { regularStoreCount: 0 }
+      );
+      expect(result.verdict).toBe("unknown");
+      expect(result.reason).toContain("印を付けて");
+    });
+
+    it("印はあるがその商品を記録していないなら、記録をすすめる", () => {
+      // 印の付いた店はあるが、この商品はまだどこでも記録していない
+      const result = judgeAgainstRegularStores(200, [], "far", {
+        regularStoreCount: 2,
+      });
+      expect(result.verdict).toBe("unknown");
+      expect(result.reason).toContain("記録したことがまだありません");
+      expect(result.reason).not.toContain("印を付けて");
+    });
+
+    it("店の数が渡されていなければ、印の話は断定しない", () => {
+      // 件数が無いと「印が無い」のか「商品が未記録」なのか区別できないので、
+      // 見当違いになりうる「印を付けてください」は言わない
+      const result = judgeAgainstRegularStores(200, [], "far");
+      expect(result.verdict).toBe("unknown");
+      expect(result.reason).not.toContain("印を付けて");
+    });
   });
 
   it("単価で比べれば内容量の違う商品どうしでも判定できる", () => {
@@ -412,7 +467,7 @@ describe("DB の行から判定用のデータを作る", () => {
     expect(converted.unitPrice).toBeNull();
   });
 
-  it("店の一覧から「よく行く店」の id を集められる", () => {
+  it("店の一覧から「いつもの店」の id を集められる", () => {
     const ids = regularStoreIdSet([
       { id: "a", is_regular: true },
       { id: "b", is_regular: false },
