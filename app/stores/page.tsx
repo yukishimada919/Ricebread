@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pencil, Store as StoreIcon, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import HelpButton from "@/components/HelpButton";
 import type { Store } from "@/lib/types";
 
 /**
@@ -140,10 +141,13 @@ export default function StoresPage() {
 
   return (
     <main className="p-4">
-      <h1 className="mb-1 flex items-center gap-2 text-xl font-bold">
-        <StoreIcon aria-hidden size={20} strokeWidth={2} />
-        店
-      </h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="flex items-center gap-2 text-xl font-bold">
+          <StoreIcon aria-hidden size={20} strokeWidth={2} />
+          店
+        </h1>
+        <HelpButton tour="stores" />
+      </div>
       <p className="mb-4 text-xs leading-relaxed text-gray-500">
         「いつもの店」に印を付けた店の記録が、よその店の値段を
         高い/安いと判断するときの基準になります。
@@ -155,7 +159,11 @@ export default function StoresPage() {
         </p>
       )}
 
-      <form onSubmit={addStore} className="mb-4 rounded-xl bg-white p-3 shadow-sm">
+      <form
+        onSubmit={addStore}
+        data-tour="stores-add"
+        className="mb-4 rounded-xl bg-white p-3 shadow-sm"
+      >
         <h2 className="mb-2 text-sm font-semibold text-gray-600">店を追加</h2>
         <input
           type="text"
@@ -171,7 +179,10 @@ export default function StoresPage() {
           placeholder="支店名・場所(任意。例: 東口店)"
           className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2"
         />
-        <label className="mt-2 flex items-center gap-1.5 text-sm">
+        <label
+          data-tour="stores-regular"
+          className="mt-2 flex items-center gap-1.5 text-sm"
+        >
           <input
             type="checkbox"
             checked={isRegular}
@@ -286,7 +297,7 @@ function StoreSection({
     <section className="mb-5">
       <h2 className="text-sm font-semibold text-gray-600">{title}</h2>
       <p className="mb-2 text-xs text-gray-400">{description}</p>
-      <ul className="flex flex-col gap-2">
+      <ul data-tour="stores-list" className="flex flex-col gap-2">
         {stores.map((store) => (
           <li
             key={store.id}

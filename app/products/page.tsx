@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Search, ShoppingBasket, Star } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import HelpButton from "@/components/HelpButton";
 import {
   baselineOf,
   cheapestStore,
@@ -164,10 +165,13 @@ export default function ProductsPage() {
 
   return (
     <main className="p-4">
-      <h1 className="mb-4 flex items-center gap-2 text-xl font-bold">
-        <ShoppingBasket aria-hidden size={20} strokeWidth={2} />
-        商品
-      </h1>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="flex items-center gap-2 text-xl font-bold">
+          <ShoppingBasket aria-hidden size={20} strokeWidth={2} />
+          商品
+        </h1>
+        <HelpButton tour="products" />
+      </div>
 
       {error && (
         <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-600">
@@ -177,7 +181,11 @@ export default function ProductsPage() {
 
       {/* 追加フォームは普段たたんでおく(一覧を見に来ることの方が多いので) */}
       {formOpen ? (
-        <form onSubmit={addProduct} className="mb-4 rounded-xl bg-white p-3 shadow-sm">
+        <form
+          onSubmit={addProduct}
+          data-tour="products-add"
+          className="mb-4 rounded-xl bg-white p-3 shadow-sm"
+        >
           <h2 className="mb-2 text-sm font-semibold text-gray-600">商品を追加</h2>
           <input
             type="text"
@@ -193,7 +201,7 @@ export default function ProductsPage() {
             placeholder="メーカー・ブランド(任意)"
             className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2"
           />
-          <div className="mt-2 flex gap-2">
+          <div data-tour="products-size" className="mt-2 flex gap-2">
             <input
               type="text"
               value={sizeText}
@@ -223,6 +231,7 @@ export default function ProductsPage() {
             消費税率(値札が本体価格だったときに税込へ直すのに使います)
           </label>
           <select
+            data-tour="products-tax"
             value={taxRate}
             onChange={(e) => setTaxRate(Number(e.target.value))}
             className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
@@ -254,6 +263,7 @@ export default function ProductsPage() {
       ) : (
         <button
           onClick={() => setFormOpen(true)}
+          data-tour="products-add-toggle"
           className="mb-4 w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white active:opacity-80"
         >
           商品を追加する
@@ -261,7 +271,7 @@ export default function ProductsPage() {
       )}
 
       {products.length > 0 && (
-        <div className="relative mb-3">
+        <div data-tour="products-search" className="relative mb-3">
           <Search
             aria-hidden
             size={16}
@@ -295,9 +305,11 @@ export default function ProductsPage() {
             return (
               <li
                 key={product.id}
+                data-tour="products-item"
                 className="flex items-center gap-1 rounded-xl bg-white shadow-sm"
               >
                 <button
+                  data-tour="products-favorite"
                   onClick={() => toggleFavorite(product)}
                   aria-label={
                     product.is_favorite

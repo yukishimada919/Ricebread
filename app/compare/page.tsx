@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeftRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import HelpButton from "@/components/HelpButton";
 import {
   regularStoreIdSet,
   toPricePoints,
@@ -108,10 +109,13 @@ export default function ComparePage() {
 
   return (
     <main className="p-4">
-      <h1 className="mb-1 flex items-center gap-2 text-xl font-bold">
-        <ArrowLeftRight aria-hidden size={20} strokeWidth={2} />
-        店を比べる
-      </h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="flex items-center gap-2 text-xl font-bold">
+          <ArrowLeftRight aria-hidden size={20} strokeWidth={2} />
+          店を比べる
+        </h1>
+        <HelpButton tour="compare" />
+      </div>
       <p className="mb-4 text-xs leading-relaxed text-gray-500">
         両方の店で値段を記録したことがある商品だけを突き合わせます。
       </p>
@@ -133,7 +137,7 @@ export default function ComparePage() {
         </p>
       ) : (
         <>
-          <div className="rounded-xl bg-white p-3 shadow-sm">
+          <div data-tour="compare-pickers" className="rounded-xl bg-white p-3 shadow-sm">
             <label className="block text-xs font-semibold text-gray-500">
               比べる店 A
             </label>
@@ -172,7 +176,10 @@ export default function ComparePage() {
           ) : comparison === null ? null : (
             <>
               {/* 表を読まなくても結論が分かるよう、まず一言でまとめる */}
-              <p className="mt-4 rounded-xl bg-emerald-600 p-4 text-sm font-semibold leading-relaxed text-white">
+              <p
+                data-tour="compare-summary"
+                className="mt-4 rounded-xl bg-emerald-600 p-4 text-sm font-semibold leading-relaxed text-white"
+              >
                 {comparisonSummary(
                   comparison,
                   storeLabel(storeA),
@@ -204,7 +211,7 @@ export default function ComparePage() {
                   <h2 className="mt-5 mb-2 text-sm font-semibold text-gray-600">
                     商品ごとの差(差の大きい順)
                   </h2>
-                  <ul className="flex flex-col gap-2">
+                  <ul data-tour="compare-rows" className="flex flex-col gap-2">
                     {comparison.rows.map((row) => {
                       const product = productById.get(row.productId);
                       const cheaperLabel =

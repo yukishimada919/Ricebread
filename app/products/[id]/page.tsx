@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import PriceTrendChart from "@/components/PriceTrendChart";
+import HelpButton from "@/components/HelpButton";
 import { VerdictPill } from "@/components/VerdictBadge";
 import { relativeDateLabel } from "@/lib/date";
 import { storeColor } from "@/lib/storeColors";
@@ -168,13 +169,16 @@ export default function ProductDetailPage() {
 
   return (
     <main className="p-4">
-      <Link
-        href="/products"
-        className="inline-flex items-center gap-1 text-sm text-emerald-700"
-      >
-        <ArrowLeft aria-hidden size={16} />
-        商品一覧へ
-      </Link>
+      <div className="flex items-center justify-between gap-2">
+        <Link
+          href="/products"
+          className="inline-flex items-center gap-1 text-sm text-emerald-700"
+        >
+          <ArrowLeft aria-hidden size={16} />
+          商品一覧へ
+        </Link>
+        <HelpButton tour="product" />
+      </div>
 
       <h1 className="mt-2 text-xl font-bold">{product.name}</h1>
       <p className="text-sm text-gray-500">
@@ -192,7 +196,10 @@ export default function ProductDetailPage() {
 
       {/* 内容量が入っている商品だけ、単価での見方に切り替えられる */}
       {canCompareByUnit(product) && (
-        <div className="mt-3 flex rounded-xl bg-gray-200 p-1 text-sm font-semibold">
+        <div
+          data-tour="product-unit-toggle"
+          className="mt-3 flex rounded-xl bg-gray-200 p-1 text-sm font-semibold"
+        >
           <button
             onClick={() => setByUnit(false)}
             className={`flex-1 rounded-lg py-2 ${
@@ -221,7 +228,7 @@ export default function ProductDetailPage() {
         </p>
       ) : (
         <>
-          <section className="mt-4 grid grid-cols-3 gap-2">
+          <section data-tour="product-summary" className="mt-4 grid grid-cols-3 gap-2">
             <SummaryTile label="相場" value={showPrice(baseline.value)} highlight />
             <SummaryTile label="いちばん安かった" value={showPrice(stats.min)} />
             <SummaryTile label="いちばん高かった" value={showPrice(stats.max)} />
@@ -235,7 +242,7 @@ export default function ProductDetailPage() {
             <h2 className="mb-2 text-sm font-semibold text-gray-600">
               店ごとの相場(安い順)
             </h2>
-            <ul className="flex flex-col gap-2">
+            <ul data-tour="product-stores" className="flex flex-col gap-2">
               {byStore.map((entry, index) => {
                 // その店の相場が、全体の相場と比べて高いか安いかを出す
                 const verdict = judge(entry.baseline.value, baseline);
@@ -279,7 +286,7 @@ export default function ProductDetailPage() {
           {trendRows.length > 0 && (
             <section className="mt-5">
               <h2 className="mb-2 text-sm font-semibold text-gray-600">値動き</h2>
-              <div className="rounded-xl bg-white p-3 shadow-sm">
+              <div data-tour="product-chart" className="rounded-xl bg-white p-3 shadow-sm">
                 <PriceTrendChart
                   rows={trendRows}
                   series={series}
@@ -293,7 +300,7 @@ export default function ProductDetailPage() {
             <h2 className="mb-2 text-sm font-semibold text-gray-600">
               記録の履歴({logs.length}件)
             </h2>
-            <ul className="flex flex-col gap-2">
+            <ul data-tour="product-history" className="flex flex-col gap-2">
               {logs.map((log) => {
                 const point = points.find(
                   (p) =>

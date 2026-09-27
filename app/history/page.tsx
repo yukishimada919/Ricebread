@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { History as HistoryIcon, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import HelpButton from "@/components/HelpButton";
 import { formatDateLabel } from "@/lib/date";
 import { formatYen, taxIncludedPrice } from "@/lib/unitPrice";
 import type { PriceLogWithRefs } from "@/lib/types";
@@ -97,10 +98,13 @@ export default function HistoryPage() {
 
   return (
     <main className="p-4">
-      <h1 className="mb-4 flex items-center gap-2 text-xl font-bold">
-        <HistoryIcon aria-hidden size={20} strokeWidth={2} />
-        履歴
-      </h1>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="flex items-center gap-2 text-xl font-bold">
+          <HistoryIcon aria-hidden size={20} strokeWidth={2} />
+          履歴
+        </h1>
+        <HelpButton tour="history" />
+      </div>
 
       {error && (
         <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-600">
@@ -135,6 +139,7 @@ export default function HistoryPage() {
                   return (
                     <li
                       key={log.id}
+                      data-tour="history-item"
                       className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm"
                     >
                       <div className="min-w-0 flex-1">
@@ -172,6 +177,7 @@ export default function HistoryPage() {
                         )}
                       </div>
                       <button
+                        data-tour="history-delete"
                         onClick={() => deleteLog(log)}
                         aria-label="この記録を削除"
                         className="shrink-0 rounded-lg p-2 text-gray-400 active:bg-gray-100"

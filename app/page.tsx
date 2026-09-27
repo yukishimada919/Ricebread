@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Plus, Store as StoreIcon, Tag, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import VerdictBadge from "@/components/VerdictBadge";
+import HelpButton from "@/components/HelpButton";
 import { formatDateLabel, todayString } from "@/lib/date";
 import {
   canCompareByUnit,
@@ -299,10 +300,13 @@ export default function RecordPage() {
   if (stores.length === 0 || products.length === 0) {
     return (
       <main className="p-4">
-        <h1 className="mb-4 flex items-center gap-2 text-xl font-bold">
-          <Tag aria-hidden size={20} strokeWidth={2} />
-          値段を記録
-        </h1>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h1 className="flex items-center gap-2 text-xl font-bold">
+            <Tag aria-hidden size={20} strokeWidth={2} />
+            値段を記録
+          </h1>
+          <HelpButton tour="record" />
+        </div>
         <div className="rounded-xl bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold">はじめの準備</h2>
           <p className="mt-2 text-sm leading-relaxed text-gray-600">
@@ -337,10 +341,14 @@ export default function RecordPage() {
 
   return (
     <main className="p-4">
-      <h1 className="mb-4 flex items-center gap-2 text-xl font-bold">
-        <Tag aria-hidden size={20} strokeWidth={2} />
-        値段を記録
-      </h1>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="flex items-center gap-2 text-xl font-bold">
+          <Tag aria-hidden size={20} strokeWidth={2} />
+          値段を記録
+        </h1>
+        {/* 初めて開いた人にはここから自動で案内を出す(読み込み後・1 回だけ) */}
+        <HelpButton tour="record" autoStart={!loading} />
+      </div>
 
       {error && (
         <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-600">
@@ -352,6 +360,7 @@ export default function RecordPage() {
         <label className="block text-xs font-semibold text-gray-500">日付</label>
         <input
           type="date"
+          data-tour="record-date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
           className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
@@ -362,6 +371,7 @@ export default function RecordPage() {
         </label>
         <select
           value={storeId}
+          data-tour="record-store"
           onChange={(e) => setStoreId(e.target.value)}
           className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
         >
@@ -380,6 +390,7 @@ export default function RecordPage() {
         </label>
         <select
           value={productId}
+          data-tour="record-product"
           onChange={(e) => selectProduct(e.target.value)}
           className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
         >
@@ -399,7 +410,7 @@ export default function RecordPage() {
         <label className="mt-3 block text-xs font-semibold text-gray-500">
           値段
         </label>
-        <div className="mt-1 flex items-center gap-2">
+        <div data-tour="record-price" className="mt-1 flex items-center gap-2">
           <input
             type="number"
             inputMode="decimal"
@@ -413,7 +424,10 @@ export default function RecordPage() {
           <span className="shrink-0 text-sm text-gray-500">円</span>
         </div>
 
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm">
+        <div
+          data-tour="record-flags"
+          className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm"
+        >
           <label className="flex items-center gap-1.5">
             <input
               type="checkbox"
@@ -444,7 +458,10 @@ export default function RecordPage() {
 
         {selectedProduct && canCompareByUnit(selectedProduct) && (
           <>
-            <label className="mt-3 block text-xs font-semibold text-gray-500">
+            <label
+              data-tour="record-size"
+              className="mt-3 block text-xs font-semibold text-gray-500"
+            >
               内容量(いつもと違うときだけ)
             </label>
             <div className="mt-1 flex items-center gap-2">
@@ -495,6 +512,7 @@ export default function RecordPage() {
 
         <button
           type="submit"
+          data-tour="record-submit"
           disabled={saving || !storeId || !productId || !price.trim()}
           className="mt-4 w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white active:opacity-80 disabled:opacity-40"
         >
@@ -504,7 +522,7 @@ export default function RecordPage() {
 
       {/* 保存する前に判定を出す。買うかどうかはレジに並ぶ前に決めたいので */}
       {verdicts && (
-        <section className="mt-4 flex flex-col gap-2">
+        <section data-tour="record-verdicts" className="mt-4 flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-gray-600">
             この値段は高い?安い?
           </h2>
