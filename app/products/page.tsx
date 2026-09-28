@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Search, ShoppingBasket, Star } from "lucide-react";
+import { Camera, ChevronRight, Search, ShoppingBasket, Star } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import HelpButton from "@/components/HelpButton";
+import PhotoPreview from "@/components/PhotoPreview";
+import { compressImage, imageErrorMessage } from "@/lib/image";
+import { toSizeInputText } from "@/lib/productLabel";
 import {
   baselineOf,
   cheapestStore,
@@ -13,7 +16,13 @@ import {
   type PricePoint,
 } from "@/lib/priceStats";
 import { SIZE_UNITS, TAX_RATES, formatSize, formatYen, parseSizeText } from "@/lib/unitPrice";
-import type { PriceLog, Product, SizeUnit, Store } from "@/lib/types";
+import type {
+  PriceLog,
+  Product,
+  ProductLabelReading,
+  SizeUnit,
+  Store,
+} from "@/lib/types";
 
 /**
  * 商品の一覧。
@@ -36,6 +45,13 @@ export default function ProductsPage() {
   const [taxRate, setTaxRate] = useState(8);
   const [saving, setSaving] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+
+  // 写真からの読み取り
+  const [scanning, setScanning] = useState(false);
+  /** 読み取りに使った写真(確認用に出しておく。保存はしない) */
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  /** 読み取り結果の補足(単位を換算した、など) */
+  const [scanNote, setScanNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -108,6 +124,68 @@ export default function ProductsPage() {
   /** 入力された内容量の文字列(「500g」など)から数値と単位を読み取る */
   const parsedSize = useMemo(() => parseSizeText(sizeText), [sizeText]);
 
+  /**
+   * 商品パッケージの写真を読み取って、登録フォームに流し込む。
+   *
+   * 読み取った内容はそのまま保存せず、必ずフォームに入れて
+   * ユーザーが直せる形にする(AI は読み間違えるため)。
+   * 写真自体は保存しない。確認用に画面に出すだけ。
+   */
+  const scanPhoto = async (file: File) => {
+    setScanning(true);
+    setError(null);
+    setScanNote(null);
+
+    try {
+      // そのまま送ると数 MB になるので、送る前に縮める
+      const { blob, base64, mimeType } = await compressImage(file);
+      // 読み取りに出したのと同じ画像を画面に残す(結果と見比べられるように)
+      const url = URL.createObjectURL(blob);
+      setPhotoUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return url;
+      });
+
+      const res = await fetch("/api/products/analyze-package", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image: base64, mimeType }),
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        setError(json.error ?? "写真の読み取りに失敗しました。");
+        return;
+      }
+
+      const reading = json.reading as ProductLabelReading;
+      if (json.empty) {
+        setError(
+          "商品を読み取れませんでした。パッケージの表面が大きく写るように撮り直すか、手で入力してください。"
+        );
+        return;
+      }
+
+      // フォームを開いて、読み取れたものだけ埋める。
+      // 読み取れなかった項目は手で入れてもらうので、既存の入力は消さない。
+      setFormOpen(true);
+      if (reading.name) setName(reading.name);
+      if (reading.maker) setMaker(reading.maker);
+      if (reading.size_amount) {
+        // 単位まで含めた文字列にしておくと、保存時の parseSizeText がそのまま読み直せる
+        // (往復して値が変わらないことは lib/productLabel.test.ts で確かめている)
+        setSizeText(toSizeInputText(reading));
+        setSizeUnit(reading.size_unit);
+      }
+      setTaxRate(reading.tax_rate_percent);
+      setScanNote(reading.note);
+    } catch (e) {
+      setError(imageErrorMessage(e));
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const addProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -145,6 +223,11 @@ export default function ProductsPage() {
       setMaker("");
       setSizeText("");
       setFormOpen(false);
+      setScanNote(null);
+      setPhotoUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
       await load();
     }
     setSaving(false);
@@ -176,6 +259,49 @@ export default function ProductsPage() {
       {error && (
         <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-600">
           {error}
+        </p>
+      )}
+
+      {/* パッケージを撮れば商品名・メーカー・内容量が埋まる。
+          内容量は手で打つのが面倒なうえ、入っていないと単価比較が効かないので、
+          写真から入れられる意味が大きい。 */}
+      <label
+        data-tour="products-scan"
+        className={`mb-3 flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-600 px-4 py-3 font-semibold text-emerald-700 ${
+          scanning ? "opacity-50" : "active:bg-emerald-50"
+        }`}
+      >
+        <Camera aria-hidden size={18} />
+        {scanning ? "読み取り中..." : "写真から商品を読み取る"}
+        <input
+          type="file"
+          accept="image/*"
+          // スマホではその場でカメラが開く
+          capture="environment"
+          disabled={scanning}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            // 同じ写真をもう一度選んでも onChange が起きるように値を空に戻す
+            e.target.value = "";
+            if (file) scanPhoto(file);
+          }}
+          className="hidden"
+        />
+      </label>
+
+      {photoUrl && (
+        <PhotoPreview
+          key={photoUrl}
+          url={photoUrl}
+          title="読み取った写真"
+          hint="入力された内容が合っているか、写真と見比べて確かめてください。"
+          className="mb-3"
+        />
+      )}
+
+      {scanNote && (
+        <p className="mb-3 rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+          {scanNote}
         </p>
       )}
 

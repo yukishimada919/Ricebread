@@ -78,3 +78,31 @@ export type PriceLogWithRefs = PriceLog & {
   > | null;
   stores: Pick<Store, "id" | "name" | "branch" | "is_regular"> | null;
 };
+
+// ------------------------------------------------------------
+// 商品パッケージの写真からの読み取り
+// ------------------------------------------------------------
+
+/**
+ * 商品パッケージを撮った写真から読み取った内容。
+ *
+ * そのまま保存せず、必ず登録フォームに流し込んで
+ * ユーザーが確認・修正できる形にすること。AI は読み間違える。
+ */
+export type ProductLabelReading = {
+  name: string | null;
+  maker: string | null;
+  /** 内容量の数値(読み取れなければ null) */
+  size_amount: number | null;
+  /** 内容量の単位。読み取れなければ piece を既定にする */
+  size_unit: SizeUnit;
+  /** パッケージに書かれていた内容量の文言そのまま(例: 「1000ml」) */
+  size_text: string | null;
+  /**
+   * 消費税率(%)。酒類だと判断できたときだけ 10、それ以外は 8。
+   * 値札ではなく商品の種類から推測するだけなので、必ず確認してもらう。
+   */
+  tax_rate_percent: number;
+  /** 読み取り時の補足(例: 内容量が見つかりませんでした) */
+  note: string | null;
+};
