@@ -187,6 +187,23 @@ export const TEXT_TIMEOUT_MS = 40_000;
 /** 残り時間がこれを下回ったら、次のモデルを試さず打ち切る(中途半端な再試行を避ける) */
 const MIN_ATTEMPT_MS = 5_000;
 
+/**
+ * 混雑(503)で弾かれたときに、同じモデルで待ち直す間隔。
+ *
+ * Gemini の無料枠は時間帯によってかなり混む。実際に写真の読み取りを
+ * 6 回試して 3 回が 503 で落ち、同じ画像でも 4 回目で成功した。
+ * 混雑は数秒で解けることが多いので、ユーザーに「もう一度押す」を
+ * させる前に、こちら側で短く待って試し直す。
+ *
+ * 1 回目は 0.8 秒、2 回目は 2 秒。待ち時間の合計が 3 秒を超えないようにして、
+ * 画面の前で待たされすぎないようにしている。
+ */
+const OVERLOAD_BACKOFF_MS = [800, 2_000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** キー未設定なら null を返す(ビルド時・未設定環境でも壊れないように) */
 export function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -254,6 +271,16 @@ function isInvalidArgument(e: unknown): boolean {
   const status = statusOf(e);
   if (status === 400) return true;
   return messageOf(e).toLowerCase().includes("invalid_argument");
+}
+
+/** 混雑(503)で弾かれたかどうか。待てば直ることが多い種類の失敗 */
+function isOverloaded(e: unknown): boolean {
+  const msg = messageOf(e).toLowerCase();
+  return (
+    statusOf(e) === 503 ||
+    msg.includes("overloaded") ||
+    msg.includes("unavailable")
+  );
 }
 
 function isAbort(e: unknown): boolean {
@@ -440,11 +467,33 @@ export async function generateContent(
           thinkingLevel: options.thinkingLevel,
         };
       }
-      const response = await ai.models.generateContent({
-        model,
-        contents: options.contents,
-        config,
-      });
+      // 混雑(503)のときだけ、同じモデルで少し待って試し直す。
+      // モデルを変えても混雑は直らないことが多いので、先にこちらを試す。
+      let response;
+      for (let retry = 0; ; retry++) {
+        try {
+          response = await ai.models.generateContent({
+            model,
+            contents: options.contents,
+            config,
+          });
+          break;
+        } catch (e) {
+          const wait = OVERLOAD_BACKOFF_MS[retry];
+          // 混雑以外、待ち時間を使い切った、残り時間が足りない、のいずれかなら諦める
+          if (
+            !isOverloaded(e) ||
+            wait === undefined ||
+            deadline - Date.now() <= MIN_ATTEMPT_MS + wait
+          ) {
+            throw e;
+          }
+          console.warn(
+            `[gemini] ${options.label} overloaded model=${model} retry=${retry + 1} in ${wait}ms`
+          );
+          await sleep(wait);
+        }
+      }
       console.log(
         `[gemini] ${options.label} ok model=${model} thinking=${withThinking} ${Date.now() - startedAt}ms`
       );
@@ -461,10 +510,13 @@ export async function generateContent(
       // 無料枠のレート制限はモデルごとにかかるため、429 も次の候補を試す。
       // リクエスト自体を受け付けてもらえない(400)ときも、別のモデルなら通ることがある。
       // それ以外(キー不正など)はモデルを変えても直らないので即座に返す。
+      // 同じモデルで待ち直しても駄目だったときは、別のモデルなら空いていることがある。
+      // 混雑(503)を外していたせいで、1 回失敗しただけで諦めていた。
       const retryable =
         isModelUnavailable(e) ||
         isInvalidArgument(e) ||
-        failure.code === "RATE_LIMITED";
+        failure.code === "RATE_LIMITED" ||
+        failure.code === "SERVICE_UNAVAILABLE";
       if (!retryable) throw new GeminiError(failure);
       skipModel = model;
     }

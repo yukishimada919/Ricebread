@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { rankModels } from "./gemini";
+import {
+  describeGeminiError,
+  generateContent,
+  invalidateModelCache,
+  rankModels,
+} from "./gemini";
+import type { GoogleGenAI } from "@google/genai";
 
 /**
  * モデル選定のテスト。
@@ -98,4 +104,112 @@ describe("rankModels", () => {
   it("候補が無ければ空を返す(呼び出し側がフォールバックに切り替える)", () => {
     expect(rankModels([{ name: "models/text-embedding-004" }])).toEqual([]);
   });
+});
+
+/**
+ * 失敗の種類分け。
+ *
+ * ここを間違えると、待てば直る失敗(混雑)で即座に諦めたり、
+ * 逆に直らない失敗(キー不正)で延々と再試行したりする。
+ *
+ * 実際、混雑(503)が「再試行してよい失敗」に入っていなかったため、
+ * 写真の読み取りが 6 回中 3 回失敗していた(2026-10-14 に判明)。
+ */
+describe("describeGeminiError", () => {
+  /** API が返すエラーの形をまねる */
+  const err = (status: number, message = "") =>
+    Object.assign(new Error(message), { status });
+
+  it("混雑(503)は SERVICE_UNAVAILABLE になる", () => {
+    expect(describeGeminiError(err(503)).code).toBe("SERVICE_UNAVAILABLE");
+  });
+
+  it("ステータスが無くても overloaded の文言で混雑と分かる", () => {
+    expect(describeGeminiError(new Error("The model is overloaded")).code).toBe(
+      "SERVICE_UNAVAILABLE"
+    );
+  });
+
+  it("レート制限(429)と混雑(503)は別物として扱う", () => {
+    expect(describeGeminiError(err(429)).code).toBe("RATE_LIMITED");
+    expect(describeGeminiError(err(503)).code).not.toBe("RATE_LIMITED");
+  });
+
+  it("キー不正は再試行しても直らないので別のコードにする", () => {
+    const code = describeGeminiError(err(401)).code;
+    expect(code).not.toBe("SERVICE_UNAVAILABLE");
+    expect(code).not.toBe("RATE_LIMITED");
+  });
+
+  it("どのエラーでも、画面に出せる日本語のメッセージが付く", () => {
+    for (const status of [400, 401, 403, 404, 429, 500, 503]) {
+      const failure = describeGeminiError(err(status));
+      expect(failure.message.length).toBeGreaterThan(0);
+      expect(failure.code.length).toBeGreaterThan(0);
+      expect(failure.status).toBeGreaterThanOrEqual(400);
+    }
+  });
+});
+
+/**
+ * 混雑したときに、ちゃんと待ち直すか。
+ *
+ * 以前は 503 を「再試行してよい失敗」に入れ忘れていたため、
+ * 1 回混んでいるだけで即座に諦めていた。実際に写真の読み取りが
+ * 6 回中 3 回失敗し、同じ画像でも 4 回目でようやく通る状態だった。
+ *
+ * 実際に待つので数秒かかるが、ここが壊れると
+ * 「たまに失敗するアプリ」に戻ってしまうので残しておく。
+ */
+describe("混雑(503)のときの再試行", () => {
+  /** 指定した回数だけ 503 を返し、そのあと成功する偽のクライアント */
+  function fakeAi(failTimes: number, calls: { n: number }) {
+    return {
+      models: {
+        list: async () => ({
+          async *[Symbol.asyncIterator]() {
+            yield {
+              name: "models/gemini-2.5-flash",
+              supportedActions: ["generateContent"],
+            };
+          },
+        }),
+        generateContent: async () => {
+          calls.n++;
+          if (calls.n <= failTimes) {
+            throw Object.assign(
+              new Error("The model is overloaded. Please try again later."),
+              { status: 503 }
+            );
+          }
+          return { candidates: [{ content: { parts: [{ text: "{}" }] } }] };
+        },
+      },
+    } as unknown as GoogleGenAI;
+  }
+
+  const opts = { label: "test", contents: [], timeoutMs: 40_000 };
+
+  it("1 回混んでいても、待ち直して成功する", async () => {
+    invalidateModelCache();
+    const calls = { n: 0 };
+    const { response } = await generateContent(fakeAi(1, calls), opts);
+    expect(response).toBeTruthy();
+    expect(calls.n).toBe(2);
+  }, 20_000);
+
+  it("2 回続けて混んでいても、3 回目で成功する", async () => {
+    invalidateModelCache();
+    const calls = { n: 0 };
+    const { response } = await generateContent(fakeAi(2, calls), opts);
+    expect(response).toBeTruthy();
+    expect(calls.n).toBe(3);
+  }, 20_000);
+
+  it("ずっと混んでいれば諦めるが、1 回で諦めたりはしない", async () => {
+    invalidateModelCache();
+    const calls = { n: 0 };
+    await expect(generateContent(fakeAi(99, calls), opts)).rejects.toThrow();
+    expect(calls.n).toBeGreaterThanOrEqual(3);
+  }, 30_000);
 });

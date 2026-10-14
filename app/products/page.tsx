@@ -276,8 +276,11 @@ export default function ProductsPage() {
         <input
           type="file"
           accept="image/*"
-          // スマホではその場でカメラが開く
-          capture="environment"
+          // capture は付けないこと。
+          // 付けると iOS Safari はカメラを直接起動してしまい、
+          // 写真ライブラリから選べなくなる(実機で詰まった)。
+          // 外しておけば iOS / Android とも
+          // 「写真を撮る / ライブラリから選ぶ」の両方が出る。
           disabled={scanning}
           onChange={(e) => {
             const file = e.target.files?.[0];
