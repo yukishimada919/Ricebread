@@ -184,9 +184,6 @@ export const IMAGE_TIMEOUT_MS = 45_000;
 /** テキストのみのリクエストの待ち時間の上限(ミリ秒)。同じく呼び出し全体の上限。 */
 export const TEXT_TIMEOUT_MS = 40_000;
 
-/** 残り時間がこれを下回ったら、次のモデルを試さず打ち切る(中途半端な再試行を避ける) */
-const MIN_ATTEMPT_MS = 5_000;
-
 /**
  * 混雑(503)で弾かれたときに、同じモデルで待ち直す間隔。
  *
@@ -300,7 +297,7 @@ export function describeGeminiError(e: unknown): GeminiFailure {
     return {
       status: 504,
       message:
-        "AI の応答に時間がかかりすぎたため中断しました。電波の良い場所で、もう一度お試しください。",
+        "AI の応答に時間がかかりすぎたため中断しました。混み合っているか、通信が不安定な可能性があります。少し時間をおいて、もう一度お試しください。",
       code: "TIMEOUT",
     };
   }
@@ -445,10 +442,18 @@ export async function generateContent(
   /** 1 回でも実際に呼び出したか(残り時間の判定は 2 回目以降にだけ効かせる) */
   let attempted = false;
 
+  /**
+   * もう 1 回試すのに最低限必要な残り時間。
+   *
+   * 足りない時間で再試行すると、1 回分が走り切る前に時間切れになり、
+   * 本当の原因(混雑など)が「時間切れ」に化けて何が起きたのか分からなくなる。
+   * 画像は 1 回が重いので、待ち時間の上限から割り出す(45 秒なら 18 秒)。
+   */
+  const minAttemptMs = Math.min(20_000, Math.floor(timeoutMs * 0.4));
+
   for (const { model, withThinking } of attempts) {
     if (model === skipModel) continue;
-    const remaining = deadline - Date.now();
-    if (attempted && remaining <= MIN_ATTEMPT_MS) {
+    if (attempted && deadline - Date.now() <= minAttemptMs) {
       console.error(
         `[gemini] ${options.label} skipped model=${model} (残り時間が足りないため打ち切り)`
       );
@@ -457,20 +462,24 @@ export async function generateContent(
     const startedAt = Date.now();
     attempted = true;
     try {
-      const config: GenerateContentConfig = {
-        ...options.config,
-        abortSignal: AbortSignal.timeout(Math.max(remaining, 1_000)),
-      };
-      if (withThinking) {
-        config.thinkingConfig = {
-          ...config.thinkingConfig,
-          thinkingLevel: options.thinkingLevel,
-        };
-      }
       // 混雑(503)のときだけ、同じモデルで少し待って試し直す。
       // モデルを変えても混雑は直らないことが多いので、先にこちらを試す。
       let response;
       for (let retry = 0; ; retry++) {
+        // 打ち切り時間は試行ごとに作り直す。
+        // 使い回すと 1 回目に使った分だけ 2 回目の持ち時間が削られ、
+        // 最後は呼んだ瞬間に時間切れになる(TIMEOUT に化ける原因だった)。
+        const remaining = deadline - Date.now();
+        const config: GenerateContentConfig = {
+          ...options.config,
+          abortSignal: AbortSignal.timeout(Math.max(remaining, 1_000)),
+        };
+        if (withThinking) {
+          config.thinkingConfig = {
+            ...config.thinkingConfig,
+            thinkingLevel: options.thinkingLevel,
+          };
+        }
         try {
           response = await ai.models.generateContent({
             model,
@@ -480,11 +489,11 @@ export async function generateContent(
           break;
         } catch (e) {
           const wait = OVERLOAD_BACKOFF_MS[retry];
-          // 混雑以外、待ち時間を使い切った、残り時間が足りない、のいずれかなら諦める
+          // 混雑以外、待ち方の上限に達した、残り時間が足りない、のいずれかなら諦める
           if (
             !isOverloaded(e) ||
             wait === undefined ||
-            deadline - Date.now() <= MIN_ATTEMPT_MS + wait
+            deadline - Date.now() <= minAttemptMs + wait
           ) {
             throw e;
           }

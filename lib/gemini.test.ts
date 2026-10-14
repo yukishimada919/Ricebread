@@ -212,4 +212,40 @@ describe("混雑(503)のときの再試行", () => {
     await expect(generateContent(fakeAi(99, calls), opts)).rejects.toThrow();
     expect(calls.n).toBeGreaterThanOrEqual(3);
   }, 30_000);
+
+  it("時間が残っていなければ待ち直さず、混雑のまま返す(時間切れに化けさせない)", async () => {
+    // 実機で踏んだ不具合の再現。
+    // 1 回目に時間をほとんど使ったあと待ち直すと、残り時間が足りずに
+    // 打ち切られ、画面には「混み合っています」ではなく
+    // 「時間がかかりすぎたため中断しました(TIMEOUT)」が出ていた。
+    // 原因が分からなくなるうえ、ユーザーは電波のせいだと誤解する。
+    invalidateModelCache();
+    const calls = { n: 0 };
+    const slowThenOverloaded = {
+      models: {
+        list: async () => ({
+          async *[Symbol.asyncIterator]() {
+            yield {
+              name: "models/gemini-2.5-flash",
+              supportedActions: ["generateContent"],
+            };
+          },
+        }),
+        generateContent: async () => {
+          calls.n++;
+          // 持ち時間 2 秒のうち 1.5 秒を使ってから混雑で落ちる
+          await new Promise((r) => setTimeout(r, 1_500));
+          throw Object.assign(new Error("The model is overloaded."), {
+            status: 503,
+          });
+        },
+      },
+    } as unknown as GoogleGenAI;
+
+    await expect(
+      generateContent(slowThenOverloaded, { ...opts, timeoutMs: 2_000 })
+    ).rejects.toMatchObject({ failure: { code: "SERVICE_UNAVAILABLE" } });
+    // 残り時間が足りないので待ち直さない
+    expect(calls.n).toBe(1);
+  }, 20_000);
 });

@@ -52,6 +52,14 @@ export default function ProductsPage() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   /** 読み取り結果の補足(単位を換算した、など) */
   const [scanNote, setScanNote] = useState<string | null>(null);
+  /**
+   * 読み取りを始めてからの経過秒数。
+   *
+   * 混み合っていると 30 秒以上かかることがあり、
+   * 「読み取り中...」が止まったままだと固まったように見える。
+   * 数字が動いていれば、待てばよいのか諦めるのかを自分で決められる。
+   */
+  const [scanSeconds, setScanSeconds] = useState(0);
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -87,6 +95,16 @@ export default function ProductsPage() {
       await load();
     })();
   }, [load]);
+
+  // 読み取り中だけ経過秒数を数える(終わったら止める)
+  useEffect(() => {
+    if (!scanning) return;
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setScanSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [scanning]);
 
   const regularIds = useMemo(() => regularStoreIdSet(stores), [stores]);
   const storeNameById = useMemo(
@@ -133,6 +151,7 @@ export default function ProductsPage() {
    */
   const scanPhoto = async (file: File) => {
     setScanning(true);
+    setScanSeconds(0);
     setError(null);
     setScanNote(null);
 
@@ -272,7 +291,9 @@ export default function ProductsPage() {
         }`}
       >
         <Camera aria-hidden size={18} />
-        {scanning ? "読み取り中..." : "写真から商品を読み取る"}
+        {scanning
+          ? `読み取り中... ${scanSeconds}秒`
+          : "写真から商品を読み取る"}
         <input
           type="file"
           accept="image/*"
@@ -291,6 +312,13 @@ export default function ProductsPage() {
           className="hidden"
         />
       </label>
+
+      {/* 待たせていることが分かるように、長引いたときだけ理由を添える */}
+      {scanning && scanSeconds >= 10 && (
+        <p className="mb-3 rounded-lg bg-gray-100 p-3 text-xs leading-relaxed text-gray-600">
+          AI が混み合っていると 30 秒ほどかかることがあります。そのままお待ちください。
+        </p>
+      )}
 
       {photoUrl && (
         <PhotoPreview
