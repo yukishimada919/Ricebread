@@ -6,7 +6,10 @@ import { Plus, Store as StoreIcon, Tag, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import VerdictBadge from "@/components/VerdictBadge";
 import HelpButton from "@/components/HelpButton";
+import PhotoPreview from "@/components/PhotoPreview";
+import PhotoScanButton from "@/components/PhotoScanButton";
 import { formatDateLabel, todayString } from "@/lib/date";
+import { findMatchingProduct } from "@/lib/productLabel";
 import {
   canCompareByUnit,
   judgeAgainstOwnHistory,
@@ -22,7 +25,13 @@ import {
   unitBaseLabel,
   unitPrice,
 } from "@/lib/unitPrice";
-import type { PriceLog, PriceLogWithRefs, Product, Store } from "@/lib/types";
+import type {
+  PriceLog,
+  PriceLogWithRefs,
+  Product,
+  ProductLabelReading,
+  Store,
+} from "@/lib/types";
 
 /**
  * 値段を記録する画面(このアプリのメイン)。
@@ -48,6 +57,10 @@ export default function RecordPage() {
   const [sizeOverride, setSizeOverride] = useState("");
   const [memo, setMemo] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // 写真から読み取ったときの確認用(保存はしない)
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [scanNote, setScanNote] = useState<string | null>(null);
 
   // 選んだ商品の過去の記録(判定のものさし)
   const [productLogs, setProductLogs] = useState<PriceLog[]>([]);
@@ -230,6 +243,86 @@ export default function RecordPage() {
     };
   }, [comparedValue, points, storeId, date, compareByUnit, regularIds]);
 
+  /**
+   * 写真から読み取った内容で、記録の入力を埋める。
+   *
+   * 商品がまだ登録されていなければここで登録する。
+   * 買い物中に「先に商品タブで登録してから」では手間がかかりすぎるため。
+   * 登録済みの商品は使い回す(同じ商品が二重に増えないように)。
+   *
+   * 店だけは写真から分からないので、選ぶのは人の仕事。
+   * 店が決まれば、その場で高い/安いの判定が出る。
+   */
+  const applyReading = async (reading: ProductLabelReading, url: string) => {
+    setPhotoUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return url;
+    });
+    if (!reading.name) return;
+
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    // セッションが切れている場合(AppShell が /login に飛ばす)
+    if (!user) return;
+
+    let product = findMatchingProduct(products, reading.name, reading.maker);
+
+    if (!product) {
+      const { data, error } = await supabase
+        .from("products")
+        .insert({
+          user_id: user.id,
+          name: reading.name.trim(),
+          maker: reading.maker?.trim() || null,
+          size_amount: reading.size_amount,
+          size_unit: reading.size_unit,
+          tax_rate_percent: reading.tax_rate_percent,
+        })
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        // 別の端末で先に登録されていた場合(23505)は、読み直せば見つかる
+        if (error.code !== "23505") {
+          setError(`商品の登録に失敗しました: ${error.message}`);
+          return;
+        }
+        const { data: reloaded } = await supabase.from("products").select("*");
+        setProducts(reloaded ?? []);
+        product = findMatchingProduct(
+          reloaded ?? [],
+          reading.name,
+          reading.maker
+        );
+        if (!product) {
+          setError("商品を登録できませんでした。手で登録してください。");
+          return;
+        }
+      } else if (data) {
+        product = data;
+        setProducts((current) => [...current, data]);
+      }
+    }
+
+    if (!product) return;
+
+    // 商品を選び直すと過去の記録が読み込まれ、判定のものさしがそろう
+    selectProduct(product.id);
+
+    if (reading.price_yen !== null) {
+      setPrice(String(reading.price_yen));
+      setTaxIncluded(reading.price_tax_included);
+      setIsSale(reading.is_sale);
+    }
+    setScanNote(
+      reading.price_yen === null
+        ? "値札は読み取れませんでした。値段は手で入れてください。"
+        : reading.note
+    );
+  };
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!storeId || !productId || !price.trim()) return;
@@ -271,6 +364,11 @@ export default function RecordPage() {
       setMemo("");
       setIsSale(false);
       setSizeOverride("");
+      setScanNote(null);
+      setPhotoUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
       await Promise.all([loadTodayLogs(date), loadProductLogs(productId)]);
     }
     setSaving(false);
@@ -353,6 +451,37 @@ export default function RecordPage() {
       {error && (
         <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-600">
           {error}
+        </p>
+      )}
+
+      {/* 買い物中はこれが主役。商品と値札を一緒に撮れば、
+          商品の登録から値段の入力まで一度に済む。
+          店だけは写真から分からないので、選ぶのは人の仕事。 */}
+      <div className="mb-3">
+        <PhotoScanButton
+          label="写真から商品と値段を読み取る"
+          onStart={() => {
+            setError(null);
+            setScanNote(null);
+          }}
+          onResult={applyReading}
+          onError={setError}
+        />
+      </div>
+
+      {photoUrl && (
+        <PhotoPreview
+          key={photoUrl}
+          url={photoUrl}
+          title="読み取った写真"
+          hint="入力された内容が合っているか、写真と見比べて確かめてください。"
+          className="mb-3"
+        />
+      )}
+
+      {scanNote && (
+        <p className="mb-3 rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+          {scanNote}
         </p>
       )}
 

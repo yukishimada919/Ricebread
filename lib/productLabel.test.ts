@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_READABLE_PRICE_YEN,
+  findMatchingProduct,
   isEmptyReading,
   normalizeReading,
   toPositiveOrNull,
+  toPriceOrNull,
   toSizeInputText,
   toSizeUnit,
   toTaxRate,
@@ -114,6 +117,11 @@ describe("読み取り結果をまとめて整える", () => {
       size_unit: "ml",
       size_text: "1000ml",
       tax_rate_percent: 8,
+      // 値札が写っていない写真なので、値段まわりは未入力のまま
+      price_yen: null,
+      price_tax_included: true,
+      is_sale: false,
+      price_text: null,
       note: null,
     });
   });
@@ -206,4 +214,122 @@ describe("読み取り → 入力欄 → 保存 の往復", () => {
       expect(parsed?.unit).toBe(unit);
     });
   }
+});
+
+/**
+ * 値札の読み取り。
+ *
+ * 値段は相場の計算に直接入るので、読み違いがそのまま入ると
+ * 以後の「高い/安い」の判定が全部狂う。
+ * 怪しい値は通さず「未入力」にして、手で入れてもらう方針。
+ */
+describe("値段", () => {
+  it("ふつうの値段は通す", () => {
+    expect(toPriceOrNull(298)).toBe(298);
+    expect(toPriceOrNull("1280")).toBe(1280);
+  });
+
+  it("小数は円単位に切り捨てる", () => {
+    expect(toPriceOrNull(298.7)).toBe(298);
+  });
+
+  it("桁を読み違えたような値は通さない(相場が壊れるため)", () => {
+    expect(toPriceOrNull(MAX_READABLE_PRICE_YEN + 1)).toBeNull();
+    expect(toPriceOrNull(9_999_999)).toBeNull();
+  });
+
+  it("上限ちょうどは通す", () => {
+    expect(toPriceOrNull(MAX_READABLE_PRICE_YEN)).toBe(MAX_READABLE_PRICE_YEN);
+  });
+
+  it("0・マイナス・数値でないものは未入力にする", () => {
+    expect(toPriceOrNull(0)).toBeNull();
+    expect(toPriceOrNull(-100)).toBeNull();
+    expect(toPriceOrNull("安い")).toBeNull();
+    expect(toPriceOrNull(null)).toBeNull();
+  });
+});
+
+describe("値札まわりの既定値", () => {
+  it("税込かどうかが分からなければ税込として扱う(日本の表示は税込が主流)", () => {
+    expect(normalizeReading({ name: "x" }).price_tax_included).toBe(true);
+    expect(
+      normalizeReading({ name: "x", price_tax_included: false }).price_tax_included
+    ).toBe(false);
+  });
+
+  it("値引きシールの有無は、はっきり true のときだけ特売にする", () => {
+    expect(normalizeReading({ name: "x" }).is_sale).toBe(false);
+    expect(normalizeReading({ name: "x", is_sale: "はい" }).is_sale).toBe(false);
+    expect(normalizeReading({ name: "x", is_sale: true }).is_sale).toBe(true);
+  });
+
+  it("値札が写っていなければ値段は未入力のまま", () => {
+    const r = normalizeReading({ name: "牛乳" });
+    expect(r.price_yen).toBeNull();
+    expect(r.price_text).toBeNull();
+  });
+
+  it("商品と値札がそろっていれば両方そのまま通る", () => {
+    const r = normalizeReading({
+      name: "合いびき肉",
+      size_amount: 400,
+      size_unit: "g",
+      price_yen: 321,
+      price_tax_included: true,
+      is_sale: true,
+      price_text: "298円(税込321円) 20%引",
+    });
+    expect(r.price_yen).toBe(321);
+    expect(r.is_sale).toBe(true);
+    expect(r.price_text).toContain("20%引");
+  });
+});
+
+/**
+ * 登録済みの商品を探す規則。
+ *
+ * DB 側のユニーク制約と同じでなければならない。
+ * ずれると、同じ商品を二重に登録しようとして弾かれるか、
+ * 別の商品を同じものと見なして値段を混ぜてしまう。
+ */
+describe("登録済みの商品を探す", () => {
+  const products = [
+    { name: "牛乳", maker: "明治" },
+    { name: "食パン", maker: null },
+    { name: "たまご", maker: "JA" },
+  ];
+
+  it("同じ名前・同じメーカーなら見つかる", () => {
+    expect(findMatchingProduct(products, "牛乳", "明治")?.maker).toBe("明治");
+  });
+
+  it("メーカーが違えば別の商品として扱う", () => {
+    expect(findMatchingProduct(products, "牛乳", "森永")).toBeNull();
+  });
+
+  it("前後の空白と大文字小文字は無視する(DB の制約と同じ)", () => {
+    expect(findMatchingProduct(products, " 牛乳 ", " 明治 ")).not.toBeNull();
+    expect(
+      findMatchingProduct([{ name: "Milk", maker: "MEIJI" }], "milk", "meiji")
+    ).not.toBeNull();
+  });
+
+  it("メーカー無しどうしは名前だけで判定する", () => {
+    expect(findMatchingProduct(products, "食パン", null)).not.toBeNull();
+    expect(findMatchingProduct(products, "食パン", "")).not.toBeNull();
+  });
+
+  it("メーカー無しと、メーカーありは別物", () => {
+    expect(findMatchingProduct(products, "食パン", "山崎")).toBeNull();
+  });
+
+  it("名前が部分的に一致するだけでは同じ商品にしない", () => {
+    expect(findMatchingProduct(products, "牛乳パック", "明治")).toBeNull();
+    expect(findMatchingProduct(products, "牛", "明治")).toBeNull();
+  });
+
+  it("登録が無ければ null", () => {
+    expect(findMatchingProduct([], "牛乳", "明治")).toBeNull();
+  });
 });

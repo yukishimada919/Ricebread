@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Camera, ChevronRight, Search, ShoppingBasket, Star } from "lucide-react";
+import { ChevronRight, Search, ShoppingBasket, Star } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import HelpButton from "@/components/HelpButton";
 import PhotoPreview from "@/components/PhotoPreview";
-import { compressImage, imageErrorMessage } from "@/lib/image";
+import PhotoScanButton from "@/components/PhotoScanButton";
 import { toSizeInputText } from "@/lib/productLabel";
 import {
   baselineOf,
@@ -47,19 +47,10 @@ export default function ProductsPage() {
   const [formOpen, setFormOpen] = useState(false);
 
   // 写真からの読み取り
-  const [scanning, setScanning] = useState(false);
   /** 読み取りに使った写真(確認用に出しておく。保存はしない) */
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   /** 読み取り結果の補足(単位を換算した、など) */
   const [scanNote, setScanNote] = useState<string | null>(null);
-  /**
-   * 読み取りを始めてからの経過秒数。
-   *
-   * 混み合っていると 30 秒以上かかることがあり、
-   * 「読み取り中...」が止まったままだと固まったように見える。
-   * 数字が動いていれば、待てばよいのか諦めるのかを自分で決められる。
-   */
-  const [scanSeconds, setScanSeconds] = useState(0);
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -95,16 +86,6 @@ export default function ProductsPage() {
       await load();
     })();
   }, [load]);
-
-  // 読み取り中だけ経過秒数を数える(終わったら止める)
-  useEffect(() => {
-    if (!scanning) return;
-    const startedAt = Date.now();
-    const timer = window.setInterval(() => {
-      setScanSeconds(Math.floor((Date.now() - startedAt) / 1000));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [scanning]);
 
   const regularIds = useMemo(() => regularStoreIdSet(stores), [stores]);
   const storeNameById = useMemo(
@@ -142,67 +123,31 @@ export default function ProductsPage() {
   /** 入力された内容量の文字列(「500g」など)から数値と単位を読み取る */
   const parsedSize = useMemo(() => parseSizeText(sizeText), [sizeText]);
 
-  /**
-   * 商品パッケージの写真を読み取って、登録フォームに流し込む。
-   *
-   * 読み取った内容はそのまま保存せず、必ずフォームに入れて
-   * ユーザーが直せる形にする(AI は読み間違えるため)。
-   * 写真自体は保存しない。確認用に画面に出すだけ。
-   */
-  const scanPhoto = async (file: File) => {
-    setScanning(true);
-    setScanSeconds(0);
-    setError(null);
-    setScanNote(null);
+  /** 写真から読み取れた内容を、登録フォームに流し込む */
+  const applyReading = (reading: ProductLabelReading, url: string) => {
+    setPhotoUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return url;
+    });
+    if (!reading.name) return;
 
-    try {
-      // そのまま送ると数 MB になるので、送る前に縮める
-      const { blob, base64, mimeType } = await compressImage(file);
-      // 読み取りに出したのと同じ画像を画面に残す(結果と見比べられるように)
-      const url = URL.createObjectURL(blob);
-      setPhotoUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return url;
-      });
-
-      const res = await fetch("/api/products/analyze-package", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ image: base64, mimeType }),
-      });
-      const json = await res.json();
-
-      if (!res.ok) {
-        setError(json.error ?? "写真の読み取りに失敗しました。");
-        return;
-      }
-
-      const reading = json.reading as ProductLabelReading;
-      if (json.empty) {
-        setError(
-          "商品を読み取れませんでした。パッケージの表面が大きく写るように撮り直すか、手で入力してください。"
-        );
-        return;
-      }
-
-      // フォームを開いて、読み取れたものだけ埋める。
-      // 読み取れなかった項目は手で入れてもらうので、既存の入力は消さない。
-      setFormOpen(true);
-      if (reading.name) setName(reading.name);
-      if (reading.maker) setMaker(reading.maker);
-      if (reading.size_amount) {
-        // 単位まで含めた文字列にしておくと、保存時の parseSizeText がそのまま読み直せる
-        // (往復して値が変わらないことは lib/productLabel.test.ts で確かめている)
-        setSizeText(toSizeInputText(reading));
-        setSizeUnit(reading.size_unit);
-      }
-      setTaxRate(reading.tax_rate_percent);
-      setScanNote(reading.note);
-    } catch (e) {
-      setError(imageErrorMessage(e));
-    } finally {
-      setScanning(false);
+    // フォームを開いて、読み取れたものだけ埋める。
+    // 読み取れなかった項目は手で入れてもらうので、既存の入力は消さない。
+    setFormOpen(true);
+    setName(reading.name);
+    if (reading.maker) setMaker(reading.maker);
+    if (reading.size_amount) {
+      // 単位まで含めた文字列にしておくと、保存時の parseSizeText がそのまま読み直せる
+      // (往復して値が変わらないことは lib/productLabel.test.ts で確かめている)
+      setSizeText(toSizeInputText(reading));
+      setSizeUnit(reading.size_unit);
     }
+    setTaxRate(reading.tax_rate_percent);
+    setScanNote(
+      reading.price_yen !== null
+        ? "値札も読み取れました。値段まで記録するなら「記録」タブの写真ボタンを使ってください。"
+        : reading.note
+    );
   };
 
   const addProduct = async (e: React.FormEvent) => {
@@ -283,42 +228,19 @@ export default function ProductsPage() {
 
       {/* パッケージを撮れば商品名・メーカー・内容量が埋まる。
           内容量は手で打つのが面倒なうえ、入っていないと単価比較が効かないので、
-          写真から入れられる意味が大きい。 */}
-      <label
-        data-tour="products-scan"
-        className={`mb-3 flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-600 px-4 py-3 font-semibold text-emerald-700 ${
-          scanning ? "opacity-50" : "active:bg-emerald-50"
-        }`}
-      >
-        <Camera aria-hidden size={18} />
-        {scanning
-          ? `読み取り中... ${scanSeconds}秒`
-          : "写真から商品を読み取る"}
-        <input
-          type="file"
-          accept="image/*"
-          // capture は付けないこと。
-          // 付けると iOS Safari はカメラを直接起動してしまい、
-          // 写真ライブラリから選べなくなる(実機で詰まった)。
-          // 外しておけば iOS / Android とも
-          // 「写真を撮る / ライブラリから選ぶ」の両方が出る。
-          disabled={scanning}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            // 同じ写真をもう一度選んでも onChange が起きるように値を空に戻す
-            e.target.value = "";
-            if (file) scanPhoto(file);
+          写真から入れられる意味が大きい。
+          値段まで記録したいときは「記録」タブの写真ボタンを使う。 */}
+      <div className="mb-3">
+        <PhotoScanButton
+          label="写真から商品を読み取る"
+          onStart={() => {
+            setError(null);
+            setScanNote(null);
           }}
-          className="hidden"
+          onResult={applyReading}
+          onError={setError}
         />
-      </label>
-
-      {/* 待たせていることが分かるように、長引いたときだけ理由を添える */}
-      {scanning && scanSeconds >= 10 && (
-        <p className="mb-3 rounded-lg bg-gray-100 p-3 text-xs leading-relaxed text-gray-600">
-          AI が混み合っていると 30 秒ほどかかることがあります。そのままお待ちください。
-        </p>
-      )}
+      </div>
 
       {photoUrl && (
         <PhotoPreview

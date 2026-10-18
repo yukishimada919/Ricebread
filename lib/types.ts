@@ -103,6 +103,24 @@ export type ProductLabelReading = {
    * 値札ではなく商品の種類から推測するだけなので、必ず確認してもらう。
    */
   tax_rate_percent: number;
+  /**
+   * 値札から読み取った値段(円)。値札が写っていなければ null。
+   *
+   * 日本のスーパーの値札は本体価格と税込価格が併記されていることが多いので、
+   * どちらを読んだのかを price_tax_included で区別する。
+   */
+  price_yen: number | null;
+  /** 上の price_yen が税込かどうか */
+  price_tax_included: boolean;
+  /**
+   * 値引きシール(「20%引」「半額」など)が貼られていたか。
+   *
+   * 貼られていれば特売として記録する。特売を相場に混ぜると
+   * 「ふだんの値段」が実際より安く見えてしまうため。
+   */
+  is_sale: boolean;
+  /** 値札に書かれていた文言そのまま(例: 「298円(税込321円)」) */
+  price_text: string | null;
   /** 読み取り時の補足(例: 内容量が見つかりませんでした) */
   note: string | null;
 };
