@@ -1,0 +1,96 @@
+# ============================================================
+# Supabase を眠らせないための定期アクセス
+#
+# Supabase の無料プランは、一定期間アクセスが無いとプロジェクトを
+# 自動で一時停止します。実際に 2 回止まりました(2026-09-10 / 2026-10-14)。
+# 止まるとログインもデータ表示もできず、アプリが壊れたように見えます。
+# 復旧自体は Supabase の画面で「Resume project」を押すだけですが、
+# 買い物の最中に気づくと手遅れなので、そうならないようにします。
+#
+# 毎日 1 回 /api/health を叩きます。
+# このエンドポイントは Postgres まで実際に問い合わせを飛ばすので、
+# 「使われている」と見なされます(データは一切返しません)。
+#
+# 失敗したら Actions が赤くなり、GitHub から通知が来ます。
+# そのときは Supabase の画面を開いて状態を確かめてください。
+#
+# ■ 知っておいてほしい制限
+#   - GitHub は、60 日間なにも動きが無いリポジトリの定期実行を
+#     自動で止めます。半年ぶりに触ったら止まっていた、はあり得ます。
+#     その場合は Actions タブから手動で有効に戻してください。
+#   - 定期実行は混雑時に遅れることがあります。1 日 1 回にしているのは
+#     多少飛ばされても間に合わせるためです。
+# ============================================================
+name: Keep Supabase awake
+
+on:
+  schedule:
+    # 毎日 03:17 UTC(日本時間 12:17)。
+    # 毎時 00 分は混んでいて遅れやすいので、半端な時刻にしています。
+    - cron: "17 3 * * *"
+  # 手で確かめたいときはここから実行できます
+  workflow_dispatch:
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: /api/health を叩く
+    runs-on: ubuntu-latest
+    env:
+      # 公開 URL。独自ドメインに変えたらここも変えてください。
+      APP_URL: ${{ vars.APP_URL || 'https://market-price-three.vercel.app' }}
+
+    steps:
+      - name: データベースに触れるか確かめる
+        run: |
+          set -o pipefail
+
+          # 寝起きは応答が遅いことがあるので、少し待って数回試す
+          for attempt in 1 2 3; do
+            echo "::group::${attempt} 回目"
+            body="$(curl -sS --max-time 60 -w '\n%{http_code}' "${APP_URL}/api/health" || true)"
+            code="$(printf '%s' "${body}" | tail -n1)"
+            json="$(printf '%s' "${body}" | sed '$d')"
+            echo "HTTP ${code}: ${json}"
+            echo "::endgroup::"
+
+            if [ "${code}" = "200" ]; then
+              {
+                echo "## ✅ Supabase は起きています"
+                echo
+                echo '```json'
+                echo "${json}"
+                echo '```'
+              } >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            fi
+
+            [ "${attempt}" -lt 3 ] && sleep 20
+          done
+
+          {
+            echo "## ⚠️ データベースに触れませんでした"
+            echo
+            echo "最後の応答: HTTP \`${code}\`"
+            echo
+            echo '```json'
+            echo "${json}"
+            echo '```'
+            echo
+            echo "### 確かめること"
+            echo
+            echo "1. Supabase のダッシュボードでプロジェクトが **Paused** になっていないか"
+            echo "   → なっていれば **Resume project** を押す(データはそのまま戻ります)"
+            echo "2. Vercel のデプロイが失敗していないか"
+            echo "3. 公開 URL が変わっていないか(変えた場合は"
+            echo "   リポジトリの Settings → Variables で \`APP_URL\` を設定してください)"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          echo "::error title=データベースに触れませんでした::${APP_URL}/api/health が HTTP ${code} を返しました。Supabase が一時停止している可能性があります。"
+          exit 1
