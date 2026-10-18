@@ -11,6 +11,12 @@ import PhotoScanButton from "@/components/PhotoScanButton";
 import { formatDateLabel, todayString } from "@/lib/date";
 import { findMatchingProduct } from "@/lib/productLabel";
 import {
+  needsSizeEachTime,
+  shouldCompareByUnit,
+  sizeFieldHint,
+  sizeFieldLabel,
+} from "@/lib/variableWeight";
+import {
   canCompareByUnit,
   judgeAgainstOwnHistory,
   judgeAgainstRegularStores,
@@ -180,12 +186,18 @@ export default function RecordPage() {
    * ここで記録を空にしても、商品が変わっていない以上は
    * 読み直しの useEffect が動かず、判定が出せなくなってしまう。
    */
-  const selectProduct = (nextProductId: string) => {
+  const selectProduct = (nextProductId: string, known?: Product) => {
     if (nextProductId === productId) return;
     setProductId(nextProductId);
     setProductLogs([]);
     setSizeOverride("");
-    setCompareByUnit(false);
+    // 量り売り(肉・魚など)はパックごとに量が変わるので、
+    // そのままの値段で比べても意味が無い。既定を単価にしておく。
+    //
+    // 写真から今まさに登録した商品は、まだ products に反映されていない。
+    // 一覧から引けないので、分かっているときは直接渡してもらう。
+    const next = known ?? products.find((p) => p.id === nextProductId);
+    setCompareByUnit(next ? shouldCompareByUnit(next) : false);
   };
 
   const regularIds = useMemo(() => regularStoreIdSet(stores), [stores]);
@@ -279,6 +291,8 @@ export default function RecordPage() {
           size_amount: reading.size_amount,
           size_unit: reading.size_unit,
           tax_rate_percent: reading.tax_rate_percent,
+          category: reading.category,
+          is_variable_weight: reading.is_variable_weight,
         })
         .select()
         .maybeSingle();
@@ -309,7 +323,13 @@ export default function RecordPage() {
     if (!product) return;
 
     // 商品を選び直すと過去の記録が読み込まれ、判定のものさしがそろう
-    selectProduct(product.id);
+    selectProduct(product.id, product);
+
+    // 量り売りはパックごとに量が変わる。値札から読めていれば、
+    // そのパックの量として入れておく(入れ忘れを防ぐ)
+    if (product.is_variable_weight && reading.size_amount) {
+      setSizeOverride(String(reading.size_amount));
+    }
 
     if (reading.price_yen !== null) {
       setPrice(String(reading.price_yen));
@@ -589,10 +609,19 @@ export default function RecordPage() {
           <>
             <label
               data-tour="record-size"
-              className="mt-3 block text-xs font-semibold text-gray-500"
+              className={`mt-3 block text-xs font-semibold ${
+                needsSizeEachTime(selectedProduct)
+                  ? "text-gray-700"
+                  : "text-gray-500"
+              }`}
             >
-              内容量(いつもと違うときだけ)
+              {sizeFieldLabel(selectedProduct)}
             </label>
+            {sizeFieldHint(selectedProduct) && (
+              <p className="mt-0.5 text-xs leading-relaxed text-gray-500">
+                {sizeFieldHint(selectedProduct)}
+              </p>
+            )}
             <div className="mt-1 flex items-center gap-2">
               <input
                 type="number"
@@ -623,6 +652,16 @@ export default function RecordPage() {
               <p className="mt-1 text-xs text-gray-500">
                 この値段は{" "}
                 {formatUnitPrice(entered.unitPrice, selectedProduct.size_unit)}
+              </p>
+            )}
+            {/* 量り売りでグラム数を入れ忘れると、登録時の量で計算されて
+                単価が静かに狂う。黙って間違えるより、言っておく。 */}
+            {needsSizeEachTime(selectedProduct) && !sizeOverride.trim() && (
+              <p className="mt-2 rounded-lg bg-amber-50 p-2.5 text-xs leading-relaxed text-amber-800">
+                グラム数が未入力です。このままだと登録時の{" "}
+                {selectedProduct.size_amount}
+                {selectedProduct.size_unit} で計算します。
+                値札のグラム数を入れてください。
               </p>
             )}
           </>

@@ -43,6 +43,14 @@ export type Product = {
   size_unit: SizeUnit;
   tax_rate_percent: number;
   is_favorite: boolean;
+  /**
+   * パックごとにグラム数が変わる商品(量り売りの精肉・鮮魚など)。
+   *
+   * true なら高い/安いの判定を既定で「100g あたり」で行い、
+   * 記録のたびに実際のグラム数を入れてもらう。
+   * 登録時のグラム数で計算すると単価が静かに狂うため。
+   */
+  is_variable_weight: boolean;
   memo: string | null;
   created_at: string;
   updated_at: string;
@@ -121,6 +129,10 @@ export type ProductLabelReading = {
   is_sale: boolean;
   /** 値札に書かれていた文言そのまま(例: 「298円(税込321円)」) */
   price_text: string | null;
+  /** 売り場の分類(例: 精肉、鮮魚、乳製品)。量り売りかどうかの手がかりにも使う */
+  category: string | null;
+  /** パックごとにグラム数が変わる商品だと判断できたか */
+  is_variable_weight: boolean;
   /** 読み取り時の補足(例: 内容量が見つかりませんでした) */
   note: string | null;
 };

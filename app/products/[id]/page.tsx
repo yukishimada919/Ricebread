@@ -20,6 +20,7 @@ import {
   summarizeByStore,
   toPricePoints,
 } from "@/lib/priceStats";
+import { shouldCompareByUnit } from "@/lib/variableWeight";
 import {
   formatSize,
   formatYen,
@@ -69,6 +70,9 @@ export default function ProductDetailPage() {
       setNotFound(true);
     } else {
       setProduct(productResult.data);
+      // 量り売り(肉・魚など)はパックごとに量が変わるので、
+      // そのままの値段を並べても比べたことにならない。最初から単価で見せる。
+      setByUnit(shouldCompareByUnit(productResult.data));
       setStores(storeResult.data ?? []);
       setLogs(logResult.data ?? []);
     }
@@ -181,6 +185,11 @@ export default function ProductDetailPage() {
       </div>
 
       <h1 className="mt-2 text-xl font-bold">{product.name}</h1>
+      {product.is_variable_weight && (
+        <p className="text-sm font-medium text-emerald-700">
+          量り売り ・ {unitBaseLabel(product.size_unit)}で比べています
+        </p>
+      )}
       <p className="text-sm text-gray-500">
         {product.maker ? `${product.maker} ・ ` : ""}
         {formatSize(product.size_amount, product.size_unit) ?? "内容量の登録なし"}

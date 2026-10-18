@@ -122,6 +122,9 @@ describe("読み取り結果をまとめて整える", () => {
       price_tax_included: true,
       is_sale: false,
       price_text: null,
+      // 規格品なので量り売りではない
+      category: null,
+      is_variable_weight: false,
       note: null,
     });
   });
@@ -331,5 +334,50 @@ describe("登録済みの商品を探す", () => {
 
   it("登録が無ければ null", () => {
     expect(findMatchingProduct([], "牛乳", "明治")).toBeNull();
+  });
+});
+
+/**
+ * 量り売りかどうかの読み取り。
+ *
+ * ここを外すと、肉や魚を「そのままの値段」で比べてしまい、
+ * パックの大きさの違いが値段の違いに見えてしまう。
+ */
+describe("量り売りの判定", () => {
+  it("AI が true と言えばそのまま量り売り扱い", () => {
+    expect(
+      normalizeReading({ name: "豚こま", category: "精肉", is_variable_weight: true })
+        .is_variable_weight
+    ).toBe(true);
+  });
+
+  it("AI が答えを返さなくても、カテゴリが精肉なら量り売りと推す", () => {
+    expect(
+      normalizeReading({ name: "豚こま", category: "精肉" }).is_variable_weight
+    ).toBe(true);
+  });
+
+  it("AI が false と言い切ったらカテゴリより優先する(パック詰めのハムなど)", () => {
+    expect(
+      normalizeReading({
+        name: "ロースハム",
+        category: "精肉",
+        is_variable_weight: false,
+      }).is_variable_weight
+    ).toBe(false);
+  });
+
+  it("規格品は量り売りにしない", () => {
+    expect(
+      normalizeReading({ name: "たまご", category: "卵" }).is_variable_weight
+    ).toBe(false);
+    expect(normalizeReading({ name: "牛乳" }).is_variable_weight).toBe(false);
+  });
+
+  it("カテゴリも一緒に取れる", () => {
+    expect(normalizeReading({ name: "豚こま", category: "精肉" }).category).toBe(
+      "精肉"
+    );
+    expect(normalizeReading({ name: "牛乳" }).category).toBeNull();
   });
 });

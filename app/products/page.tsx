@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import HelpButton from "@/components/HelpButton";
 import PhotoPreview from "@/components/PhotoPreview";
 import PhotoScanButton from "@/components/PhotoScanButton";
+import { shouldCompareByUnit } from "@/lib/variableWeight";
 import { toSizeInputText } from "@/lib/productLabel";
 import {
   baselineOf,
@@ -15,7 +16,15 @@ import {
   toPricePoints,
   type PricePoint,
 } from "@/lib/priceStats";
-import { SIZE_UNITS, TAX_RATES, formatSize, formatYen, parseSizeText } from "@/lib/unitPrice";
+import {
+  SIZE_UNITS,
+  TAX_RATES,
+  formatSize,
+  formatYen,
+  formatYenDetailed,
+  parseSizeText,
+  unitBaseLabel,
+} from "@/lib/unitPrice";
 import type {
   PriceLog,
   Product,
@@ -43,6 +52,9 @@ export default function ProductsPage() {
   const [sizeText, setSizeText] = useState("");
   const [sizeUnit, setSizeUnit] = useState<SizeUnit>("g");
   const [taxRate, setTaxRate] = useState(8);
+  /** 量り売り(パックごとにグラム数が変わる)か */
+  const [variableWeight, setVariableWeight] = useState(false);
+  const [category, setCategory] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
 
@@ -143,6 +155,8 @@ export default function ProductsPage() {
       setSizeUnit(reading.size_unit);
     }
     setTaxRate(reading.tax_rate_percent);
+    setVariableWeight(reading.is_variable_weight);
+    setCategory(reading.category);
     setScanNote(
       reading.price_yen !== null
         ? "値札も読み取れました。値段まで記録するなら「記録」タブの写真ボタンを使ってください。"
@@ -174,6 +188,8 @@ export default function ProductsPage() {
       size_amount: parsedSize?.amount ?? null,
       size_unit: parsedSize?.unit ?? sizeUnit,
       tax_rate_percent: taxRate,
+      category,
+      is_variable_weight: variableWeight,
     });
 
     if (error) {
@@ -186,6 +202,8 @@ export default function ProductsPage() {
       setName("");
       setMaker("");
       setSizeText("");
+      setVariableWeight(false);
+      setCategory(null);
       setFormOpen(false);
       setScanNote(null);
       setPhotoUrl((current) => {
@@ -322,6 +340,24 @@ export default function ProductsPage() {
             ))}
           </select>
 
+          {/* 肉や魚はパックごとに量が変わるので、そのままの値段では比べられない。
+              印を付けておけば、記録のときに自動で 100g あたりの比較になる。 */}
+          <label className="mt-3 flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={variableWeight}
+              onChange={(e) => setVariableWeight(e.target.checked)}
+              className="mt-0.5 size-4 shrink-0"
+            />
+            <span>
+              量り売り(パックごとに量が変わる)
+              <span className="mt-0.5 block text-xs leading-relaxed text-gray-500">
+                精肉・鮮魚・青果など。印を付けると、記録するときに
+                100gあたりで比べるようになります。
+              </span>
+            </span>
+          </label>
+
           <div className="mt-3 flex gap-2">
             <button
               type="button"
@@ -378,8 +414,14 @@ export default function ProductsPage() {
         <ul className="flex flex-col gap-2">
           {visible.map((product) => {
             const points = pointsByProduct.get(product.id) ?? [];
-            const baseline = baselineOf(points);
-            const cheapest = cheapestStore(points);
+            // 量り売りは、そのままの値段を並べても比べたことにならない
+            // (400g 500円 と 600g 750円 は同じ 125円/100g)。
+            // 詳細画面と同じ見方に揃える。
+            const byUnit = shouldCompareByUnit(product);
+            const baseline = baselineOf(points, byUnit);
+            const cheapest = cheapestStore(points, byUnit);
+            const showPrice = (value: number) =>
+              byUnit ? formatYenDetailed(value) : formatYen(value);
 
             return (
               <li
@@ -419,16 +461,21 @@ export default function ProductsPage() {
                         </span>
                       )}
                     </p>
+                    {product.is_variable_weight && (
+                      <p className="truncate text-xs font-medium text-emerald-700">
+                        量り売り ・ {unitBaseLabel(product.size_unit)}で比較
+                      </p>
+                    )}
                     <p className="truncate text-xs text-gray-500">
                       {product.maker ? `${product.maker} ・ ` : ""}
                       {baseline
-                        ? `相場 ${formatYen(baseline.value)}(記録 ${baseline.sampleCount}件)`
+                        ? `相場 ${showPrice(baseline.value)}(記録 ${baseline.sampleCount}件)`
                         : "まだ記録がありません"}
                     </p>
                     {cheapest && (
                       <p className="truncate text-xs font-medium text-emerald-700">
                         最安 {storeNameById.get(cheapest.storeId) ?? "不明な店"} ・{" "}
-                        {formatYen(cheapest.baseline.value)}
+                        {showPrice(cheapest.baseline.value)}
                       </p>
                     )}
                   </div>

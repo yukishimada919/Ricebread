@@ -12,6 +12,7 @@
  */
 
 import type { ProductLabelReading, SizeUnit } from "./types";
+import { looksVariableWeight } from "./variableWeight";
 
 const SIZE_UNITS: SizeUnit[] = ["g", "ml", "piece"];
 
@@ -80,6 +81,14 @@ export function normalizeReading(parsed: unknown): ProductLabelReading {
     price_tax_included: o.price_tax_included !== false,
     is_sale: o.is_sale === true,
     price_text: toText(o.price_text, 60),
+    category: toText(o.category, 40),
+    // AI の返事が曖昧なときは、カテゴリから推し直す。
+    // それでも分からなければ量り売りにしない(毎回グラム数を
+    // 入れる手間を規格品にまで強いないため)
+    is_variable_weight:
+      o.is_variable_weight === true ||
+      (o.is_variable_weight !== false &&
+        looksVariableWeight(toText(o.category, 40))),
     note: toText(o.note, 200),
   };
 }
